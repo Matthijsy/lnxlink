@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
-import yaml
+import json
 import paho.mqtt.client as mqtt
-import time
 import signal
 import threading
-import json
-import modules
+import time
 import traceback
+import yaml
+
+import modules
 
 
 class GracefulKiller:
@@ -34,9 +35,11 @@ class LNXlink():
 
     def monitor_run(self):
         if self.config['monitoring'] is not None:
-            for service in self.config['monitoring']:
+            for service in self.config['monitoring'] + self.config['control']:
+                addon = self.Addons[service]
+                if not hasattr(addon, 'getInfo'):
+                    continue
                 try:
-                    addon = self.Addons[service]
                     subtopic = addon.name.lower().replace(' ', '/')
                     topic = f"{self.pref_topic}/{self.config['mqtt']['statsPrefix']}/{subtopic}"
                     pub_data = addon.getInfo()
@@ -102,10 +105,11 @@ class LNXlink():
     def on_message(self, client, userdata, msg):
         topic = msg.topic.replace(f"{self.pref_topic}/commands/", "")
         message = msg.payload
+        print(message)
         try:
             message = json.loads(message)
         except Exception as e:
-            traceback.print_exc()
+            pass
 
         select_service = topic.split('/')
         control = self.Addons.get(select_service[0])
@@ -143,7 +147,6 @@ class LNXlink():
                 if addon.unit:
                     discovery_template['unit_of_measurement'] = addon.unit
                 if hasattr(addon, 'device_class'):
-                    print(addon.device_class)
                     discovery_template['device_class'] = addon.device_class
 
                 if service == 'network':
@@ -161,13 +164,17 @@ class LNXlink():
                     discovery_template['value_template'] = "{{ value_json.upload }}"
 
                 sensor_type = getattr(addon, 'sensor_type', 'sensor')
-                print(service, sensor_type)
                 self.client.publish(
                     f"homeassistant/{sensor_type}/lnxlink/{discovery_template['unique_id']}/config",
                     payload=json.dumps(discovery_template),
                     retain=False
                 )
-            if 'shutdown' in self.config['control']:
+        if self.config['control'] is not None:
+            for service in self.config['control']:
+                addon = self.Addons[service]
+                subtopic = addon.name.lower().replace(' ', '/')
+                state_topic = f"{self.pref_topic}/{self.config['mqtt']['statsPrefix']}/{subtopic}"
+
                 discovery_template = {
                     "availability": {
                         "topic": f"{self.pref_topic}/lwt",
@@ -180,20 +187,23 @@ class LNXlink():
                         "model": self.config['mqtt']['prefix'],
                         "manufacturer": "LNXLink 0.3"
                     },
-                    "name": "Shutdown",
-                    "unique_id": f"{self.config['mqtt']['clientId']}_shutdown",
-                    "icon": "mdi:power",
-                    "command_topic": f"{self.pref_topic}/commands/shutdown",
-                    "state_topic": f"{self.pref_topic}/lwt",
+                    "name": addon.name.lower().replace(' ', '_'),
+                    "unique_id": f"{self.config['mqtt']['clientId']}_{service}xxx",
+                    "icon": addon.icon,
+                    "command_topic": f"{self.pref_topic}/commands/{service}",
+                    "state_topic": state_topic,
                     "payload_off": "OFF",
                     "payload_on": "ON",
+                    "state_on": "ON",
+                    "state_off": "OFF"
                 }
+
+                type = getattr(addon, 'type', 'switch')
                 self.client.publish(
-                    f"homeassistant/switch/lnxlink/{discovery_template['unique_id']}/config",
+                    f"homeassistant/{type}/lnxlink/{discovery_template['unique_id']}/config",
                     payload=json.dumps(discovery_template),
                     retain=False
                 )
-
 
 
 if __name__ == '__main__':

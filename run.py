@@ -105,9 +105,13 @@ class LNXlink():
     def on_message(self, client, userdata, msg):
         topic = msg.topic.replace(f"{self.pref_topic}/commands/", "")
         message = msg.payload
-        print(message)
         try:
             message = json.loads(message)
+        except Exception as e:
+            pass
+
+        try:
+            message = message.decode('utf-8')
         except Exception as e:
             pass
 
@@ -140,7 +144,7 @@ class LNXlink():
                 subtopic = addon.name.lower().replace(' ', '/')
                 topic = f"{self.pref_topic}/{self.config['mqtt']['statsPrefix']}/{subtopic}"
 
-                discovery_template['name'] = addon.name.lower().replace(' ', '_')
+                discovery_template['name'] = addon.name
                 discovery_template['unique_id'] = f"{self.config['mqtt']['clientId']}_{service}"
                 discovery_template['state_topic'] = topic
                 discovery_template['icon'] = addon.icon
@@ -187,7 +191,7 @@ class LNXlink():
                         "model": self.config['mqtt']['prefix'],
                         "manufacturer": "LNXLink 0.3"
                     },
-                    "name": addon.name.lower().replace(' ', '_'),
+                    "name": addon.name,
                     "unique_id": f"{self.config['mqtt']['clientId']}_{service}xxx",
                     "icon": addon.icon,
                     "command_topic": f"{self.pref_topic}/commands/{service}",
